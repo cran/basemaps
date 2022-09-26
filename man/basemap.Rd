@@ -2,15 +2,16 @@
 % Please edit documentation in R/basemap.R
 \name{basemap}
 \alias{basemap}
-\alias{basemap_raster}
-\alias{basemap_stars}
-\alias{basemap_mapview}
 \alias{basemap_plot}
-\alias{basemap_ggplot}
-\alias{basemap_gglayer}
 \alias{basemap_magick}
 \alias{basemap_png}
 \alias{basemap_geotif}
+\alias{basemap_terra}
+\alias{basemap_raster}
+\alias{basemap_stars}
+\alias{basemap_ggplot}
+\alias{basemap_gglayer}
+\alias{basemap_mapview}
 \title{Get a spatial basemap}
 \usage{
 basemap(
@@ -20,73 +21,13 @@ basemap(
   map_res = NULL,
   map_token = NULL,
   map_dir = NULL,
-  class = "stars",
+  class = "plot",
   force = FALSE,
   ...,
   verbose = TRUE
 )
 
-basemap_raster(
-  ext = NULL,
-  map_service = NULL,
-  map_type = NULL,
-  map_res = NULL,
-  map_token = NULL,
-  map_dir = NULL,
-  force = NULL,
-  ...,
-  verbose = TRUE
-)
-
-basemap_stars(
-  ext = NULL,
-  map_service = NULL,
-  map_type = NULL,
-  map_res = NULL,
-  map_token = NULL,
-  map_dir = NULL,
-  force = NULL,
-  ...,
-  verbose = TRUE
-)
-
-basemap_mapview(
-  ext = NULL,
-  map_service = NULL,
-  map_type = NULL,
-  map_res = NULL,
-  map_token = NULL,
-  map_dir = NULL,
-  force = NULL,
-  ...,
-  verbose = TRUE
-)
-
 basemap_plot(
-  ext = NULL,
-  map_service = NULL,
-  map_type = NULL,
-  map_res = NULL,
-  map_token = NULL,
-  map_dir = NULL,
-  force = NULL,
-  ...,
-  verbose = TRUE
-)
-
-basemap_ggplot(
-  ext = NULL,
-  map_service = NULL,
-  map_type = NULL,
-  map_res = NULL,
-  map_token = NULL,
-  map_dir = NULL,
-  force = NULL,
-  ...,
-  verbose = TRUE
-)
-
-basemap_gglayer(
   ext = NULL,
   map_service = NULL,
   map_type = NULL,
@@ -133,6 +74,78 @@ basemap_geotif(
   ...,
   verbose = TRUE
 )
+
+basemap_terra(
+  ext = NULL,
+  map_service = NULL,
+  map_type = NULL,
+  map_res = NULL,
+  map_token = NULL,
+  map_dir = NULL,
+  force = NULL,
+  ...,
+  verbose = TRUE
+)
+
+basemap_raster(
+  ext = NULL,
+  map_service = NULL,
+  map_type = NULL,
+  map_res = NULL,
+  map_token = NULL,
+  map_dir = NULL,
+  force = NULL,
+  ...,
+  verbose = TRUE
+)
+
+basemap_stars(
+  ext = NULL,
+  map_service = NULL,
+  map_type = NULL,
+  map_res = NULL,
+  map_token = NULL,
+  map_dir = NULL,
+  force = NULL,
+  ...,
+  verbose = TRUE
+)
+
+basemap_ggplot(
+  ext = NULL,
+  map_service = NULL,
+  map_type = NULL,
+  map_res = NULL,
+  map_token = NULL,
+  map_dir = NULL,
+  force = NULL,
+  ...,
+  verbose = TRUE
+)
+
+basemap_gglayer(
+  ext = NULL,
+  map_service = NULL,
+  map_type = NULL,
+  map_res = NULL,
+  map_token = NULL,
+  map_dir = NULL,
+  force = NULL,
+  ...,
+  verbose = TRUE
+)
+
+basemap_mapview(
+  ext = NULL,
+  map_service = NULL,
+  map_type = NULL,
+  map_res = NULL,
+  map_token = NULL,
+  map_dir = NULL,
+  force = NULL,
+  ...,
+  verbose = TRUE
+)
 }
 \arguments{
 \item{ext}{extent to be covered by the basemap as any spatial class supported by \code{st_bbox}.}
@@ -147,7 +160,7 @@ basemap_geotif(
 
 \item{map_dir}{character, cache directory where downloaded basemap tiles will be stored. By default, a temporary directory is used, which is destroyed when the session is terminated.}
 
-\item{class}{character, output class, either \code{"stars"}, \code{"raster"}, \code{"mapview"}, \code{"plot"}, \code{"ggplot"}, \code{"gglayer"}, \code{"magick"}, \code{"png"} or \code{"geotif"}..}
+\item{class}{character, output class, either either \code{plot} (default), \code{magick}, \code{png}, \code{geotif} or if suggested packages are installed, \code{terra}, \code{raster}, \code{stars}, \code{ggplot}, \code{gglayer} or \code{mapview}.}
 
 \item{force}{logical, whether to force download over cached files or not. Default is \code{FALSE}.}
 

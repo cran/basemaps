@@ -74,80 +74,49 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
 #' @keywords internal
 #' @noRd
 .expand_ext <- function(ext.both, rg){
-  if(which.min(rg) == 1){
-    ext.both[[which.min(rg)]]@xmin <- -180+ext.both[[which.min(rg)]]@xmin-180
-    ext.both[[which.min(rg)]]@xmax <- -180+ext.both[[which.min(rg)]]@xmax-180
-  } else{
-    ext.both[[which.max(rg)]]@xmin <- 180+ext.both[[which.max(rg)]]@xmin+180
-    ext.both[[which.max(rg)]]@xmax <- 180+ext.both[[which.max(rg)]]@xmax+180
+  
+  ## STARS
+  # if(ext.both[[which.max(rg)]]@xmin < 0){
+  #   ext.both[[which.max(rg)]]@xmin <- ext.both[[which.max(rg)]]@xmin - rg[which.min(rg)]
+  #   ext.both[[which.min(rg)]]@xmax <- ext.both[[which.min(rg)]]@xmax + rg[which.max(rg)]
+  # }else{
+  #   ext.both[[which.max(rg)]]@xmax <- ext.both[[which.max(rg)]]@xmax + rg[which.min(rg)]
+  #   ext.both[[which.min(rg)]]@xnub <- ext.both[[which.min(rg)]]@xmin - rg[which.max(rg)]
+  # }
+  rg_mm <- .which_rg(rg)
+  if(ext.both[[rg_mm$max]][1] < 0){
+    ext.both[[rg_mm$max]][1] <- ext.both[[rg_mm$max]][1] - rg[rg_mm$min]
+    ext.both[[rg_mm$min]][2] <- ext.both[[rg_mm$min]][2] + rg[rg_mm$max]
+  }else{
+    ext.both[[rg_mm$max]][2] <- ext.both[[rg_mm$max]][2] + rg[rg_mm$min]
+    ext.both[[rg_mm$min]][1] <- ext.both[[rg_mm$min]][1] - rg[rg_mm$max]
   }
+  
   return(ext.both)
 }
 
-#' plot raster as ggplot
-#' @importFrom raster ncell aggregate
+#' handles case in which rg is equal
 #' @keywords internal
 #' @noRd
-gg.bmap <- function(r, r_type, gglayer = F, ...){
-  extras <- list(...)
-  if(!is.null(extras$maxpixels)) maxpixels <- extras$maxpixels else maxpixels <- 500000
-  if(!is.null(extras$alpha)) alpha <- extras$alpha else alpha <- 1
-  if(!is.null(extras$maxColorValue)) maxColorValue <- extras$maxColorValue else maxColorValue <- NA
-  
-  # aggregate raster if too large
-  if(maxpixels < ncell(r)) r <- aggregate(r, fact = ceiling(ncell(r)/maxpixels))
-  
-  # transform into data.frame
-  df <- data.frame(raster::as.data.frame(r, xy = T))
-  colnames(df) <- c("x", "y", paste0("val", 1:(ncol(df)-2)))
-  
-  # factor if discrete to show categrocial legend
-  df$fill <- df$val1
-  if(r_type == "discrete") df$fill <- as.factor(df$fill)
-  
-  # transform to RGB colours
-  if(r_type == "RGB"){
-    if(is.na(maxColorValue)) maxColorValue <- max(c(df$val1, df$val2, df$val3), na.rm = T)
-    
-    if(maxColorValue < max(c(df$val1, df$val2, df$val3), na.rm = T)){
-      out("maxColorValue < maximum raster value. maxColorValue is set to maximum raster value.", type = 2)
-      maxColorValue <- max(c(df$val1, df$val2, df$val3), na.rm = T)
-    }
-    
-    # remove NAs
-    na.sel <- is.na(df$val1) & is.na(df$val2) & is.na(df$val3)
-    if(any(na.sel)) df <- df[!na.sel,]
-    
-    df$fill <- grDevices::rgb(red = df$val1, green = df$val2, blue = df$val3, maxColorValue = maxColorValue)
+.which_rg <- function(rg){
+  rg_mm <- list()
+  if(rg[1] == rg[2]){
+    rg_mm$min <- 1
+    rg_mm$max <- 2
   } else{
-    
-    # remove NAs
-    na.sel <- is.na(df$val1)
-    if(any(na.sel)) df <- df[!na.sel,]
+    rg_mm$min <- which.min(rg)
+    rg_mm$max <- which.max(rg)
   }
-  # if NA gaps are there, use geom_tile, otherwise make it fast using geom_raster
-  if(any(na.sel)){
-    gg <- ggplot2::geom_tile(ggplot2::aes_string(x = "x", y = "y", fill = "fill"), data = df, alpha = alpha)
-  } else{
-    gg <- ggplot2::geom_raster(ggplot2::aes_string(x = "x", y = "y", fill = "fill"), data = df, alpha = alpha)
-  }
-  
-  if(isFALSE(gglayer)){
-    gg <- ggplot2::ggplot() + gg + ggplot2::coord_sf()
-    if(r_type == "RGB") gg <- gg + ggplot2::scale_fill_identity() 
-  }
-  return(gg)
+  return(rg_mm)
 }
-
 
 #' get map
 #' @importFrom slippymath bbox_to_tile_grid tile_bbox
-#' @importFrom raster extent extent<- resample extend merge brick
 #' @importFrom magick image_read image_write image_convert
 #' @importFrom curl curl_download
 #' @importFrom httr http_error GET
 #' @importFrom sf st_transform st_bbox st_as_sfc st_crs st_crs<- st_crop
-#' @importFrom stars read_stars write_stars st_as_stars st_set_bbox st_mosaic st_dimensions st_dimensions<-
+#' @importFrom terra rast ext ext<- crs crs<- mosaic project crop writeRaster extend merge
 #' @keywords internal
 #' @noRd
 .get_map <- function(ext, map_service, map_type, map_token, map_dir, map_res, force, class, ...){
@@ -155,6 +124,7 @@ gg.bmap <- function(r, r_type, gglayer = F, ...){
   extras <- list(...)
   if(!is.null(extras$no_transform)) no_transform <- extras$no_transform else no_transform <- FALSE
   if(!is.null(extras$no_crop)) no_crop <- extras$no_crop else no_crop <- FALSE
+  if(!is.null(extras$custom_crs)) custom_crs <- extras$custom_crs else custom_crs <- NA
   
   if(inherits(ext, "bbox")) ext <- list(ext)
   file_comp <- lapply(ext, function(y){
@@ -226,53 +196,65 @@ gg.bmap <- function(r, r_type, gglayer = F, ...){
       })
       
       # create composite
-      #r <- quiet(compose_tile_grid(tg, images))
+      
+      ## STARS VERSION
+      # r <- mapply(img = images, x = tg$tiles$x, y = tg$tiles$y, function(img, x, y){
+      #   box <- tile_bbox(x, y, tg$zoom)
+      #   img_st <- read_stars(img)
+      #   img_st <- st_set_bbox(img_st, box)
+      #   st_crs(img_st) <- tg$crs
+      #   return(img_st)
+      # }, SIMPLIFY = F)
+      
+      ## TERRA VERSION
       r <- mapply(img = images, x = tg$tiles$x, y = tg$tiles$y, function(img, x, y){
         box <- tile_bbox(x, y, tg$zoom)
-        img_st <- read_stars(img)
-        img_st <- st_set_bbox(img_st, box)
-        st_crs(img_st) <- tg$crs
-        return(img_st)
-      }, SIMPLIFY = F)
-      r <- do.call(st_mosaic, r)
+        img_rst <- quiet(terra::rast(img))
+        terra::ext(img_rst) <- terra::ext(box[c("xmin", "xmax", "ymin", "ymax")])
+        terra::crs(img_rst) <- as.character(tg$crs$wkt)
+        return(img_rst)
+      }, SIMPLIFY = F, USE.NAMES = F)
+      
+      r <- do.call(terra::mosaic, r)
       
       if(isFALSE(no_transform)){ ## needed?
         if(as.numeric(tg$crs$epsg) != 3857){
-          r <- st_transform(r, crs = tg$crs)
-          #r <- projectRaster(r, crs = crs(paste0("+init=epsg:", tg$crs$epsg)), method = "ngb")
+          #r <- st_transform(r, crs = tg$crs)
+          r <- terra::project(r, y = as.character(tg$crs$wkt), method = "bilinear")
         }
       }
       
       # crop composite
       if(isFALSE(no_crop)){
-        r <- st_crop(r, y)
-        #r <- crop(r, extent(y[1], y[3], y[2], y[4]), snap = "out")
+        #r <- st_crop(r, y)
+        r <- terra::crop(r, terra::ext(y[c("xmin", "xmax", "ymin", "ymax")]))
       }
       
       # decode terrain DEM
       if(all(map_service == "mapbox", map_type == "terrain")){
         #r <-  -10000 + ((r[,,,1] * 256 * 256 + r[,,,2] * 256 + r[,,,3]) * 0.1)
         
-        r1 <- r[,,,1] * 256 * 256
-        r2 <- r[,,,2] * 256
-        r3 <- r[,,,3]
-        st_dimensions(r3) <- st_dimensions(r2) <- st_dimensions(r1)
+        ## STARS
+        # r1 <- r[,,,1] * 256 * 256
+        # r2 <- r[,,,2] * 256
+        # r3 <- r[,,,3]
+        # st_dimensions(r3) <- st_dimensions(r2) <- st_dimensions(r1)
+        # 
+        # r <-  -10000 + ((r1 + r2 + r3) * 0.1)
         
-        r <-  -10000 + ((r1 + r2 + r3) * 0.1)
-        
-        #r <-  -10000 + ((r[[1]] * 256 * 256 + r[[2]] * 256 + r[[3]]) * 0.1)
-        #r_terr <- terrain(r, opt = c("slope", "aspect"))
-        #r_hs <- hillShade(r_terr$slope, r_terr$aspect)
+        ## TERRA
+        r <-  -10000 + (((r[[1]] * 256 * 256) + (r[[2]] * 256) + r[[3]]) * 0.1)
       }
       
       # empty iamgery (inf case)
-      if(identical(quiet(range(r[[1]], na.rm=T)), c(Inf, -Inf))){
+      if(identical(quiet(range(r, na.rm=T)), c(Inf, -Inf))){
         r[[1]][] <- 0
       }
       
-      unlink(file_comp)
-      write_stars(r, dsn = file_comp)
-      #writeRaster(r, filename = file_comp, overwrite = T) # datatype = "INT1U",
+      #unlink(file_comp)
+      #write_stars(r, dsn = file_comp)
+      terra::writeRaster(r, filename = file_comp, overwrite = TRUE, filetype = "GTiff")
+      #gdal=c("COMPRESS=NONE", "TFW=YES")
       options(basemaps.cached = c(cached, list(list(tg = tg, file_comp = file_comp))))
     } 
     return(file_comp)
@@ -282,29 +264,91 @@ gg.bmap <- function(r, r_type, gglayer = F, ...){
   if(length(file_comp) > 1){
 
     # load and name 
-    r <- lapply(file_comp, brick)
-    names(r) <- names(ext)
+    r <- lapply(unname(file_comp), terra::rast)
     
-    # extend over dateline
-    ext.both <- list(east = extent(r$east), west = extent(r$west))
-    rg <- c("east"= diff(c(ext.both$east@xmin, ext.both$east@xmax)), "west" = diff(c(ext.both$west@xmin, ext.both$west@xmax)))
-
-    ext.both <- .expand_ext(ext.both, rg)
-    #ext.both <- .shift_ext(ext.both)
-    extent(r$east) <- ext.both$east
-    extent(r$west) <- ext.both$west
-
-    # extend lower res raster, resample higher res raster and merge both
-    ext.combi <- .combine_ext(ext.both)
-
-    r[[which.min(rg)]] <- extend(r[[which.min(rg)]], ext.combi)
-    r[[which.max(rg)]] <- resample(r[[which.max(rg)]], r[[which.min(rg)]])
-    r <- list(merge(r[[1]], r[[2]]))
+    # get original extents of untouched rasters
+    ext.both <- lapply(r, terra::ext)
+    
+    # measure x diff, which side should be preserved, whcih side should be extended to the other?
+    rg <- sapply(ext.both, function(x) diff(c(x[1], x[2])))
+    rg_mm <- .which_rg(rg) 
+    
+    # save the x end coodinate of this grid
+    cc.xmin <- ext.both[[rg_mm$max]][1] #xmin
+    
+    # expand both extents
+    ext.both.exp <- .expand_ext(ext.both, rg)
+    
+    # choose an extent
+    ext.combi <- ext.both.exp[[rg_mm$max]]
+    
+    # extend the larger one
+    r[[rg_mm$max]] <- terra::extend(r[[rg_mm$max]], ext.combi)
+    
+    # shift the smaller one over to the other side
+    ext.min <- terra::ext(r[[rg_mm$min]])
+    ext.min <- terra::ext(as.numeric(cc.xmin - min(rg)), cc.xmin, ext.min[3], ext.min[4])
+    
+    terra::ext(r[[rg_mm$min]]) <- ext.min
+    
+    # extent the smaller one too, resample to larger one
+    r[[rg_mm$min]] <- terra::extend(r[[rg_mm$min]], ext.combi)
+    r[[rg_mm$min]] <- terra::resample(r[[rg_mm$min]], r[[rg_mm$max]])
+    
+    # fuse rasters over grid end
+    r <- terra::merge(r[[1]], r[[2]])
+    
+    # if another CRS is equested, we need to do some tricks, since we cannot reproject the "shifted" raster
+    if(!is.na(custom_crs)){
+      
+      # shift extent onto one side of the coordinate line
+      ext.repro <- terra::ext(r)
+      if(cc.xmin < 0){
+        ext.repro[1] <- ext.repro[1] + rg[rg_mm$min]
+        ext.repro[2] <- ext.repro[2] + rg[rg_mm$min]
+      } else{
+        ext.repro[1] <- ext.repro[1] - rg[rg_mm$min]
+        ext.repro[2] <- ext.repro[2] - rg[rg_mm$min]
+      }
+      # project shifted raster
+      terra::ext(r) <- ext.repro
+      r <- terra::project(r, y = custom_crs, method = "bilinear")
+      
+      # now project the original extents of the two rasters
+      r_as_was <- lapply(unname(file_comp), terra::rast)
+      ext.before <- lapply(r_as_was, function(x) terra::ext(terra::project(x, y = custom_crs,  method = "bilinear")))
+      
+      # combine these two as before
+      rg <- sapply(ext.before, function(x) diff(c(x[1], x[2])))
+      rg_mm <- .which_rg(rg) 
+      ext.before.exp <- .expand_ext(ext.before, rg)
+      
+      # assign equivialnt extent
+      terra::ext(r) <- ext.before.exp[[rg_mm$max]]
+    }
     
     file_comp <- paste0(map_dir, "basemap_", gsub(":", "", gsub(" ", "", gsub("-", "", Sys.time()))), ".tif")
-    write_stars(st_as_stars(r), file_comp)
+    #write_stars(st_as_stars(r), file_comp)
+    terra::writeRaster(r, filename = file_comp, overwrite = TRUE, filetype = "GTiff")
   } else{
-    file_comp <- file_comp[[1]]
+    
+    # custom crs?
+    if(!is.na(custom_crs)){
+      ## RASTER
+      # r <- brick(file_comp[[1]])
+      # r <- projectRaster(r, crs = custom_crs)
+      
+      ## TERRA
+      r <- terra::rast(file_comp[[1]])
+      r <- terra::project(r, y = custom_crs, method = "bilinear")
+      
+      file_comp <- paste0(map_dir, "basemap_", gsub(":", "", gsub(" ", "", gsub("-", "", Sys.time()))), ".tif")
+      #write_stars(st_as_stars(r), file_comp)
+      terra::writeRaster(r, filename = file_comp, overwrite = TRUE, filetype = "GTiff")
+    } else{
+      
+      file_comp <- file_comp[[1]]
+    }
   }
   
   # rename layers
@@ -341,6 +385,23 @@ gg.bmap <- function(r, r_type, gglayer = F, ...){
 #' @importFrom pbapply pboptions
 #' @noRd 
 .onLoad <- function(libname, pkgname){
+  
+  # avoid messages from unfound finalizer methods
+  # see https://github.com/rspatial/terra/issues/30 but also elsewhere found
+  # remove when issue seems resolved
+  catch <- suppressMessages(trace(reg.finalizer, quote({
+    
+    classDef <- dynGet("classDef", ifnotfound = NULL)
+    if (!is.null(classDef)) {
+      f <- function(x) {
+        method <- selectMethod("$", list(x = class(x$.self)))
+        finalize <- method(x$.self, "finalize")
+        finalize()
+      }
+    }
+    
+  }), print = FALSE))
+  
   pboptions(type = "timer", char = "=", txt.width = getOption("width")-30) # can be changed to "none"
   if(is.null(getOption("basemaps.verbose")))  options(basemaps.verbose = FALSE)
   if(is.null(getOption("basemaps.cached"))) options(basemaps.cached = list())
@@ -436,4 +497,11 @@ gg.bmap <- function(r, r_type, gglayer = F, ...){
       world_navigation_charts = "https://services.arcgisonline.com/arcgis/rest/services/Specialty/World_Navigation_Charts/MapServer/tile/")
   ))
   if(!dir.exists(getOption("basemaps.defaults")$map_dir)) dir.create(getOption("basemaps.defaults")$map_dir)
+  
+}
+
+#' package detach
+#' @noRd 
+.onUnload <- function(libpath){
+  catch <- untrace(reg.finalizer)
 }
