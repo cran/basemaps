@@ -33,6 +33,17 @@ test_that("basemap()", {
     ext = ext_sc, map_service = "carto", map_type = "light", map_dir = map_dir,
     verbose = F, custom_crs = custom_crs), "RasterBrick"
   ))
+  
+  # test custom zoom
+  expect_is(
+    basemap(ext = ext, map_dir = map_dir, verbose = F, custom_zoom = 3, class = "terra"),
+    "SpatRaster"
+  )
+  
+  expect_is(
+    basemap(ext = ext, map_dir = map_dir, verbose = F, custom_zoom = 2, class = "terra"),
+    "SpatRaster"
+  )
 })
 
 test_that("basemap_plot()", {
@@ -104,6 +115,7 @@ if(isTRUE(test$maps)){
   test_services <- names(get_maptypes())
   if(isFALSE(run_mapbox)) test_services <- test_services[test_services != "mapbox"]
   if(isFALSE(run_osmtf)) test_services <- test_services[test_services != "osm_thunderforest"]
+  if(isFALSE(run_osmstamen)) test_services <- test_services[test_services != "osm_stamen"]
   if(isFALSE(run_esri)) test_services <- test_services[test_services != "esri"]
   
   catch <- lapply(test_services, function(service) lapply(get_maptypes(service), function(x, s = service){
@@ -111,7 +123,9 @@ if(isTRUE(test$maps)){
       mapbox_token
     } else if(s == "osm_thunderforest"){
       osmtf_token
-    } else{
+    } else if(s == "osm_stamen"){
+      osmstamen_token
+    } else {
       NULL
     }
     

@@ -116,7 +116,9 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
 #' @importFrom curl curl_download
 #' @importFrom httr http_error GET
 #' @importFrom sf st_transform st_bbox st_as_sfc st_crs st_crs<- st_crop
-#' @importFrom terra rast ext ext<- crs crs<- mosaic project crop writeRaster extend merge
+#' @importFrom stars read_stars st_set_bbox st_mosaic
+#' @importFrom terra rast ext ext<- mosaic project crop writeRaster extend merge RGB<-
+#' @importFrom methods as
 #' @keywords internal
 #' @noRd
 .get_map <- function(ext, map_service, map_type, map_token, map_dir, map_res, force, class, ...){
@@ -126,12 +128,19 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
   if(!is.null(extras$no_crop)) no_crop <- extras$no_crop else no_crop <- FALSE
   if(!is.null(extras$custom_crs)) custom_crs <- extras$custom_crs else custom_crs <- NA
   
+  # Allow the user to specify a custom tile zoom level, to be provided to bbox_to_tile_grid()
+  if(!is.null(extras$custom_zoom)) custom_zoom <- extras$custom_zoom else custom_zoom <- NULL
+
   if(inherits(ext, "bbox")) ext <- list(ext)
   file_comp <- lapply(ext, function(y){
     
     ## calculate needed slippy tiles using slippymath
     ext.ll <- st_bbox(st_transform(st_as_sfc(y), crs = st_crs(4326)))
-    tg <- bbox_to_tile_grid(ext.ll, max_tiles = ceiling(map_res*20))
+    if(!is.null(custom_zoom)){
+      tg <- bbox_to_tile_grid(ext.ll, zoom=custom_zoom)
+    } else{
+      tg <- bbox_to_tile_grid(ext.ll, max_tiles = ceiling(map_res*20))
+    }
     tg$crs <- st_crs(y)
     tg$map_service <- map_service
     tg$map_type <- map_type
@@ -165,13 +174,15 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
             if(map_service == "esri") paste0(x[2], "/", x[1]) else paste0(x[1], "/", x[2]), # coordinate order
             if(any(map_service != "mapbox", all(map_service == "mapbox", map_type == "terrain"))) ".png", # file suffix or not
             if(map_service == "mapbox") paste0("?access_token=", map_token), # token or not
-            if(map_service == "osm_thunderforest") paste0("?apikey=", map_token) # token or not
+            if(map_service == "osm_thunderforest") paste0("?apikey=", map_token), # token or not
+            if(map_service == "osm_stamen") paste0("?api_key=", map_token), # token or not
+            if(map_service == "osm_stadia") paste0("?api_key=", map_token) # token or not
           )
           
           if(isTRUE(http_error(url))){
             resp <- GET(url)
             status <- resp$status_code
-            if(status == 401 & map_service == "mapbox") out("Authentification failed. Is your map_token correct?", type = 3)
+            if(any(status == 401 & map_service == "mapbox", status == 401 & map_service == "osm_stamen", status == 401 & map_service == "osm_stadia")) out("Authentification failed. Is your map_token correct?", type = 3)
             if(status == 403 & map_service == "osm_thunderforest") out("Authentification failed. Is your map_token correct?", type = 3)
           }
           if(!file.exists(file)){
@@ -198,24 +209,38 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
       # create composite
       
       ## STARS VERSION
-      # r <- mapply(img = images, x = tg$tiles$x, y = tg$tiles$y, function(img, x, y){
-      #   box <- tile_bbox(x, y, tg$zoom)
-      #   img_st <- read_stars(img)
-      #   img_st <- st_set_bbox(img_st, box)
-      #   st_crs(img_st) <- tg$crs
-      #   return(img_st)
-      # }, SIMPLIFY = F)
-      
-      ## TERRA VERSION
       r <- mapply(img = images, x = tg$tiles$x, y = tg$tiles$y, function(img, x, y){
         box <- tile_bbox(x, y, tg$zoom)
-        img_rst <- quiet(terra::rast(img))
-        terra::ext(img_rst) <- terra::ext(box[c("xmin", "xmax", "ymin", "ymax")])
-        terra::crs(img_rst) <- as.character(tg$crs$wkt)
-        return(img_rst)
-      }, SIMPLIFY = F, USE.NAMES = F)
+        img_st <- read_stars(img)
+        img_st <- st_set_bbox(img_st, box)
+        st_crs(img_st) <- tg$crs
+        return(img_st)
+      }, SIMPLIFY = F)
+      r <- do.call(stars::st_mosaic, r)
+      r <- as(r, "SpatRaster")
+      RGB(r) <- 1:3
       
-      r <- do.call(terra::mosaic, r)
+      ## TERRA VERSION
+      # r <- mapply(img = images, x = tg$tiles$x, y = tg$tiles$y, function(img, x, y){
+      #   box <- tile_bbox(x, y, tg$zoom)
+      #   img_rst <- quiet(terra::rast(img))
+      #   terra::ext(img_rst) <- terra::ext(box[c("xmin", "xmax", "ymin", "ymax")])
+      #   terra::crs(img_rst) <- as.character(tg$crs$wkt)
+      #   return(img_rst)
+      # }, SIMPLIFY = F, USE.NAMES = F)
+      # 
+      # #r <- do.call(terra::mosaic, r) # BROKEN (https://github.com/rspatial/terra/issues/1262)
+      # #temp FIX
+      # while(length(r) > 1){
+      #   i_mosaic <- data.frame(from = seq(from = 1, to = length(r), by = 2))
+      #   i_mosaic$to <- c(tail(i_mosaic$from-1, n=-1), length(r))
+      #   r <- lapply(1:nrow(i_mosaic), function(i){
+      #     if(i_mosaic[i,1] == i_mosaic[i,2]) return(r[[i]]) else do.call(terra::mosaic, r[i_mosaic[i,1]:i_mosaic[i,2]])
+      #   })
+      # }
+      # r <- r[[1]]
+      # RGB(r) <- 1:3
+      # # end temp FIX
       
       if(isFALSE(no_transform)){ ## needed?
         if(as.numeric(tg$crs$epsg) != 3857){
@@ -363,8 +388,8 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
 #' @keywords internal
 #' @noRd
 .defaults <- function(){
-  list(map_service = "osm_stamen",
-       map_type = "terrain",
+  list(map_service = "carto",
+       map_type = "voyager",
        map_res = 1,
        map_token = NA)
 }
@@ -375,7 +400,14 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
 .md_maptypes_table <- function(maptypes){
   x <- paste0(lapply(names(maptypes), function(service){
     paste0(unlist(lapply(maptypes[[service]], function(x, s = service){
-      paste0("| `", s, "` | `", x, "` | ", if(any(grepl("mapbox", s), grepl("osm_thunderforest", s))) "yes" else "no", " |")
+      token <- if(grepl("mapbox", s)){
+        "yes, register: https://mapbox.com"
+      } else if(grepl("osm_thunderforest", s)){
+        "yes, register: https://www.thunderforest.com/"
+      } else if(any(grepl("osm_stamen", s), grepl("osm_stadia", s))){
+        "yes, register: https://stadiamaps.com/"
+      } else "no"
+      paste0("| `", s, "` | `", x, "` | ", token,  " |")
     })), collapse = "\n")
   }), collapse = "\n")
   cat(paste0("| `map_service` | `map_type` | `map_token` required? |\n | ------ |  ------ | ------ |\n", x))
@@ -427,12 +459,17 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
       #hydda_base = "https://a.tile.openstreetmap.se/hydda/base/",), # unresponsive
     ),
     osm_stamen = list(
-      toner = "https://stamen-tiles-a.a.ssl.fastly.net/toner/",
-      toner_bg = "https://stamen-tiles-a.a.ssl.fastly.net/toner-background/",
-      toner_lite = "https://stamen-tiles-a.a.ssl.fastly.net/toner-lite/",
-      terrain = "http://tile.stamen.com/terrain/",
-      terrain_bg = "http://tile.stamen.com/terrain-background/",
-      watercolor = "http://tile.stamen.com/watercolor/"
+      toner = "https://tiles.stadiamaps.com/tiles/stamen_toner/",
+      toner_bg = "https://tiles.stadiamaps.com/tiles/stamen_toner_background/",
+      terrain = "https://tiles.stadiamaps.com/tiles/stamen_terrain/",
+      terrain_bg = "https://tiles.stadiamaps.com/tiles/stamen_terrain_background/",
+      watercolor = "https://tiles.stadiamaps.com/tiles/stamen_watercolor/"
+    ),
+    osm_stadia = c(
+      alidade_smooth = "https://tiles.stadiamaps.com/tiles/alidade_smooth/",
+      alidade_smooth_dark = "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/",
+      outdoors = "https://tiles.stadiamaps.com/tiles/outdoors/",
+      osm_bright = "https://tiles.stadiamaps.com/tiles/osm_bright/"
     ),
     osm_thunderforest = list(
       cycle = "https://tile.thunderforest.com/cycle/",
@@ -494,7 +531,8 @@ out <- function(input, type = 1, ll = NULL, msg = FALSE, sign = "", verbose = ge
       world_reference_overlay = "https://services.arcgisonline.com/arcgis/rest/services/Reference/World_Reference_Overlay/MapServer/tile/",
       world_transportation = "https://services.arcgisonline.com/arcgis/rest/services/Reference/World_Transportation/MapServer/tile/",
       delorme_world_base_map = "https://services.arcgisonline.com/arcgis/rest/services/Specialty/DeLorme_World_Base_Map/MapServer/tile/",
-      world_navigation_charts = "https://services.arcgisonline.com/arcgis/rest/services/Specialty/World_Navigation_Charts/MapServer/tile/")
+      world_navigation_charts = "https://services.arcgisonline.com/arcgis/rest/services/Specialty/World_Navigation_Charts/MapServer/tile/"
+    )
   ))
   if(!dir.exists(getOption("basemaps.defaults")$map_dir)) dir.create(getOption("basemaps.defaults")$map_dir)
   
