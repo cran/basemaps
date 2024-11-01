@@ -1,5 +1,22 @@
 ***
 
+## basemaps 0.0.8
+New map service *Maptiler*, minor improvements
+
+**Features:**
+
+* added Maptiler support (`map_service="maptiler"`) for many new map types from https://maptiler.com (free token required), including `"aquarelle"`, `"backdrop"`, `"basic"`, `"bright"`, `"dataviz"`, `"landscape"`, `"ocean"`, `"outdoor"`, `"satellite"`, `"streets"`, `"toner"`, `"topo"` and `"winter"` (see `get_maptypes()`)
+
+**Bugs:**
+
+* Resolves 404 HTTP error when using `map_service="osm_stamen"`, `map_type="watercolor"` (#31, #30, thanks to @pushing-boulders for the PR)
+* fixes an issue remarked in #29 that produces to much verbosity
+
+<br>
+
+
+***
+
 ## basemaps 0.0.7
 Minor improvements
 
